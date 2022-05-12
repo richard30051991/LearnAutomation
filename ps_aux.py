@@ -7,7 +7,6 @@ dt_string = dt.strftime("%d-%m-%Y-%H:%M")
 files = (sys.stdout, open(f"{dt_string}", "w"))
 
 ps = subprocess.Popen(['ps', 'aux'], stdout=subprocess.PIPE).communicate()[0]
-#ps = "USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND\nroot 1 0.0 0.3 5748 3512 pts/0 Ss 07:29 0:00 sh space\nagr 51 0.0 0.2 5748 3592 pts/1 Ss+ 07:34 0:00 bash\nroot 65 0.0 0.1 9388 2896 pts/0 R+ 09:18 0:00 ps aux"
 processes = ps.decode().split("\n")
 nfields = len(processes[0].split()) - 1
 processes_running = []
