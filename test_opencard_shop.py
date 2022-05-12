@@ -4,15 +4,17 @@ from pages.page_home_opencard import PageHomeShop
 from pages.page_catalog_opencard import PageCatalogShop
 from pages.page_card_apple_cinema import PageCardShop
 import allure
+import uuid
 
 
 @allure.feature('Тест магазина опенкард')
 @allure.story('Регистрация нового пользователя')
 def test_add_new_user(browser, url):
     browser.get(url + "/index.php?route=account/register")
+    email = str(uuid.uuid1()) + "@test.ru"
     PageRegister(browser).fill_in_the_fields(firstname="Имя",
                                              lastname="Фамилия",
-                                             email="test@test.ru",
+                                             email=email,
                                              telephone="123456798",
                                              password="12345",
                                              confirm="12345")
@@ -57,7 +59,7 @@ def test_home_page(browser, url):
 @allure.story('Проверка страницы каталога')
 def test_catalog(browser, url):
     browser.get(url+"index.php?route=product/category&path=20")
-    assert PageCatalogShop(browser).check_input_limit() == "20"
+    assert PageCatalogShop(browser).check_input_limit() == "15"
     assert PageCatalogShop(browser).get_input_sort() == "Default"
     assert PageCatalogShop(browser).get_new_price_apple_cinema() == "$110.00"
     assert PageCatalogShop(browser).get_old_price_apple_cinema() == "$122.00"

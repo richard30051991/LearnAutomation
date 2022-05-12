@@ -1,16 +1,83 @@
+from pages.page_autorization import authorization_admin
+import datetime
+from pathlib import Path
+import allure
 import pytest
 from selenium import webdriver
-import datetime
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import logging
+from selenium.webdriver.support.events import EventFiringWebDriver, AbstractEventListener
+import os
+import time
+
+fixture_authorization = authorization_admin
+DRIVERS = os.getenv('DRIVERS')
+
+
+def directory_log():
+    path = (Path.cwd() / "logs")
+    if os.path.exists(path):
+        print("Директория найдена")
+    else:
+        os.mkdir(path)
+        print("Директория создана")
+    return path
+
+
+logging.basicConfig(handlers=[logging.FileHandler(filename=directory_log() / "test.log", encoding='utf-8')],
+                    datefmt="%F %A %T",
+                    format="[%(asctime)s] %(name)s:%(levelname)s:%(message)s",
+                    level=logging.INFO)
+
+
+class MyListener(AbstractEventListener):
+    def before_navigate_to(self, url, driver):
+        logging.info(f"I'm navigating to {url} and {driver.title}")
+
+    def after_navigate_to(self, url, driver):
+        logging.info(f"I'm on {url}")
+
+    def before_navigate_back(self, driver):
+        logging.info(f"I'm navigating back")
+
+    def after_navigate_back(self, driver):
+        logging.info(f"I'm back!")
+
+    def before_find(self, by, value, driver):
+        logging.info(f"I'm looking for '{value}' with '{by}'")
+
+    def after_find(self, by, value, driver):
+        logging.info(f"I've found '{value}' with '{by}'")
+
+    def before_click(self, element, driver):
+        logging.info(f"I'm clicking {element}")
+
+    def after_click(self, element, driver):
+        logging.info(f"I've clicked {element}")
+
+    def before_execute_script(self, script, driver):
+        logging.info(f"I'm executing '{script}'")
+
+    def after_execute_script(self, script, driver):
+        logging.info(f"I've executed '{script}'")
+
+    def before_quit(self, driver):
+        logging.info(f"I'm getting ready to terminate {driver}")
+
+    def after_quit(self, driver):
+        logging.info(f"WASTED!!!")
+
+    def on_exception(self, exception, driver):
+        logging.error(f'Oooops i got: {exception}')
+        driver.save_screenshot(f'logs/{driver.session_id}.png')
 
 
 def pytest_addoption(parser):
     parser.addoption("--browser", action="store", default="chrome", help="Browser type: chrome or firefox or Opera.")
-    parser.addoption("--headless", action="store_true", default=False, help="Headless mode if supplied.")
     parser.addoption("--versions", action="store", default="100.0")
-    parser.addoption("--url", action="store", default="https://demo.opencart.com/")
+    parser.addoption("--url", action="store", default="http://192.168.192.149:8180/")
+    parser.addoption("--executor", default="127.0.0.1")
+    parser.addoption("--log_level", action="store", default="DEBUG")
+    parser.addoption("--mobile", action="store_true")
 
 
 @pytest.fixture(scope="function")
@@ -18,118 +85,98 @@ def browser(request):
     """Запуск / выбор и закрытие браузера"""
     current_date = datetime.datetime.now()
     browsers = request.config.getoption("--browser")
+    executor = request.config.getoption("--executor")
+    log_level = request.config.getoption("--log_level")
+    version = request.config.getoption("--versions")
+    mobile = request.config.getoption("--mobile")
+    logger = logging.getLogger('driver')
+    test_name = request.node.name
+    logger.setLevel(level=log_level)
+    logger.info("===> Test {} started at {}".format(test_name, datetime.datetime.now()))
     print(f"--browser: {browsers}, {current_date}")
-    headless = request.config.getoption("--headless")
-    version = request.config.getoption("--version")
-    url = request.config.getoption("--url")
     driver, options = None, None
-    if browsers == 'chrome':
-        options = webdriver.ChromeOptions()
-        driver = webdriver.Chrome(options=options)
-    elif browsers == 'firefox':
-        options = webdriver.FirefoxOptions()
-        driver = webdriver.Firefox()
-    elif browsers == 'opera':
-        options = webdriver.Opera()
-        driver = webdriver.Opera()
+    if executor == "local":
+        caps = {'goog:chromeOptions': {}}
+
+        if mobile:
+            caps["goog:chromeOptions"]["mobileEmulation"] = {"deviceName": "iPhone 5/SE"}
+            driver = webdriver.Chrome(desired_capabilities=caps)
+        elif browsers == 'chrome':
+            options = webdriver.ChromeOptions()
+            driver = webdriver.Chrome(options=options, executable_path=f"{DRIVERS}/chromedriver",
+                                      desired_capabilities=caps)
+        elif browsers == 'firefox':
+            driver = webdriver.Firefox(options=options, executable_path=f"{DRIVERS}/geckodriver",
+                                       desired_capabilities=caps)
+        elif browsers == 'opera':
+            driver = webdriver.Opera(options=options, executable_path=f"{DRIVERS}/operachromiumdriver",
+                                     desired_capabilities=caps)
+        else:
+            print("unrecognized --browser: {}".format(browsers))
+            yield None
     else:
-        print("unrecognized --browser: {}".format(browsers))
-        yield None
-    if headless:
-        options.add_argument("--headless")
-        options.add_argument("--window-size=1920,1080")
-        print("Run test in headless mode: --headless")
+        executor_url = f"http://{executor}:4444/wd/hub"
+
+        caps = {
+            "browserName": browsers,
+            "browserVersion": version,
+            "selenoid:options": {
+                "enableVNC": True,
+                "enableVideo": False,
+            },
+            'acceptSslCerts': True,
+            'acceptInsecureCerts': True,
+            'goog:chromeOptions': {}
+        }
+
+        if browsers == "chrome" and mobile:
+            caps["goog:chromeOptions"]["mobileEmulation"] = {"deviceName": "iPhone 5/SE"}
+
+        driver = webdriver.Remote(
+            command_executor=executor_url,
+            desired_capabilities=caps
+        )
+
+        if not mobile:
+            driver.maximize_window()
+    driver = EventFiringWebDriver(driver, MyListener())
+    driver.test_name = request.node.name
+    driver.log_level = log_level
+    logger.info(driver)
+
     driver.maximize_window()
-    driver.set_page_load_timeout(15)
+    driver.set_page_load_timeout(10)
     driver.implicitly_wait(6)
-    driver.get(url)
-    yield (driver, url)
+    yield driver
     driver.quit()
+    logger.info("===> Test {} finished at {}".format(test_name, datetime.datetime.now()))
 
 
-def test_home_page(browser):
-    driver, url = browser
-    wait = WebDriverWait(driver, 10)
-    assert len(wait.until(EC.presence_of_all_elements_located((
-        By.CSS_SELECTOR, '[class="product-thumb transition"]')))) == 4
-    assert wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'footer p'))).get_property("textContent") \
-           == "Powered By OpenCart Your Store © 2022"
-    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[class="btn btn-link dropdown-toggle"]'))).click()
-    element = wait.until(EC.presence_of_all_elements_located((
-        By.CSS_SELECTOR, '[class="currency-select btn btn-link btn-block"]')))
-    assert len(element) == 3
-    assert element[0].text == "€ Euro"
-    assert wait.until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, '[name="search"]'))).get_attribute("placeholder") == "Search"
-    assert " item(s) - $" in wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[id="cart-total"]'))).text
+@pytest.fixture(scope="function")
+def url(request):
+    url = request.config.getoption("--url")
+    yield url
 
 
-def test_catalog(browser):
-    driver, url = browser
-    url = url + "index.php?route=product/category&path=20"
-    wait = WebDriverWait(driver, 10)
-    driver.get(url)
-    assert wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[id="input-limit"] option[selected="selected"] '))).text == "15"
-    assert wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[id="input-sort"] option[selected="selected"] '))).text == "Default"
-    assert wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[id="content"] h2'))).text == "Desktops"
-    assert wait.until(EC.presence_of_element_located((
-        By.XPATH, "//*[@alt='Apple Cinema 30\"']/../../..//span[@class='price-new']"))).text == "$110.00"
-    assert wait.until(EC.presence_of_element_located((
-        By.XPATH, "//*[@alt='Apple Cinema 30\"']/../../..//span[@class='price-old']"))).text == "$122.00"
-
-
-def test_card_apple_cinema(browser):
-    driver, url = browser
-    url = url + "index.php?route=product/product&product_id=42"
-    wait = WebDriverWait(driver, 10)
-    driver.get(url)
-    assert len(wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, '[class="image-additional"]')))) == 5
-    assert wait.until(EC.presence_of_element_located((
-        By.XPATH, "//*[(text() = '$122.00')]"))).get_attribute("style") == "text-decoration: line-through;"
-    assert wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[id="product-product"] [class="col-sm-4"] h1'))).text == 'Apple Cinema 30"'
-    elements = wait.until(EC.presence_of_all_elements_located((
-        By.XPATH, "//*[(text() = 'Related Products')]/../div[@class='row']//h4")))
-    assert len(elements) == 2
-    assert elements[0].text == "iPhone"
-    assert elements[1].text == "iMac"
-
-
-def test_page_authorization(browser):
-    driver, url = browser
-    wait = WebDriverWait(driver, 10)
-    driver.get(url="http://localhost/admin/")
-    assert wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[class="panel-title"]'))).text == \
-           "Please enter your login details."
-    element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[type='submit']")))
-    assert element.text == "Login"
-    element.click()
-    assert wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[class="alert alert-danger alert-dismissible"]'))).text == \
-           'No match for Username and/or Password.\n×'
-    assert wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[name="username"]'))).get_attribute('placeholder') == "Username"
-    assert wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[name="password"]'))).get_attribute('placeholder') == "Password"
-
-
-def test_page_registration(browser):
-    driver, url = browser
-    url = url + "index.php?route=account/register"
-    wait = WebDriverWait(driver, 10)
-    driver.get(url)
-    element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[value="Continue"]')))
-    element.click()
-    assert wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[class="alert alert-danger alert-dismissible"]'))).text == \
-           'Warning: You must agree to the Privacy Policy!'
-    assert wait.until(EC.presence_of_all_elements_located((
-        By.CSS_SELECTOR, '[class="text-danger"]')))[0].text == "First Name must be between 1 and 32 characters!"
-    assert wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[id="content"] h1'))).text == 'Register Account'
-    assert wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[id="content"] p'))).get_property("textContent") == \
-           "If you already have an account with us, please login at the login page."
-    assert len(wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, '[class="text-danger"]')))) == 5
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item):
+    outcome = yield
+    current_date = datetime.datetime.now()
+    rep = outcome.get_result()
+    if rep.when == "call" and rep.failed or rep.skipped:
+        mode = 'a' if os.path.exists('failures') else 'w'
+        try:
+            with open('failures', mode):
+                if 'browser' in item.fixturenames:
+                    web_driver = item.funcargs['browser']
+                else:
+                    print('Fail to take screen-shot')
+                    return
+            time.sleep(2)
+            allure.attach(
+                web_driver.get_screenshot_as_png(),
+                name=f'screenshot {current_date}',
+                attachment_type=allure.attachment_type.PNG
+            )
+        except Exception as e:
+            print('Fail to take screen-shot: {}'.format(e))

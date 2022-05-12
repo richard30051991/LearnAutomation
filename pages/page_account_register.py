@@ -1,4 +1,4 @@
-from log_allure.pages.base_page import BasePage
+from pages.base_page import BasePage
 from selenium.webdriver.common.by import By
 import allure
 
@@ -31,7 +31,7 @@ class PageRegister(BasePage):
 
     def get_text_error_null_name(self):
         with allure.step("Получаем ошибку незаполненного поля"):
-            return self.find_element((By.CSS_SELECTOR, '[class="text-danger"]'))[0].text
+            return self.find_elements((By.CSS_SELECTOR, '[class="text-danger"]'))[0].text
 
     def get_count_error_null_fields(self):
         with allure.step("Считаем количество незаполненных полей"):
