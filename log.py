@@ -43,10 +43,7 @@ def parser_log(file):
         "total_stat": {},
         "total_requests": 0
     }
-    idx = 0
     for line in file:
-        if idx > 99:
-            break
         ip_match = re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", line)
         if ip_match is not None:
             ip = ip_match.group()
@@ -55,32 +52,37 @@ def parser_log(file):
             else:
                 ip_method[ip] = 1
 
-        method = re.search(r"\] \"(POST|GET|PUT|DELETE|HEAD|CONNECT|OPTIONS|TRACE)", line)
-        if method is not None:
-            method_x = method.group(1)
-            dict_method[method_x] += 1
+        method_match = re.search(r"\] \"(POST|GET|PUT|DELETE|HEAD|CONNECT|OPTIONS|TRACE)", line)
+        if method_match is not None:
+            method = method_match.group(1)
+            dict_method[method] += 1
 
-        longest = re.split(r'["]', line)
-        if int(longest[6]) >= general_dict["top_longest"][0]["duration"]:
+        url = re.search(r"(http)?:\/\/(\S+)", line)
+        if url is not None:
+            url = url.group(0)[:-1]
+        elif url is None:
+            url = "-"
+
+        longest = re.search(r"\d+$", line)
+        longest = longest.group(0)
+        if int(longest) >= general_dict["top_longest"][0]["duration"]:
             general_dict["top_longest"][0]["ip"] = ip
-            general_dict["top_longest"][0]["date"] = longest[0].split("- ")[2]
-            general_dict["top_longest"][0]["method"] = longest[1].split()[0]
-            general_dict["top_longest"][0]["url"] = longest[3]
-            general_dict["top_longest"][0]["duration"] = int(longest[6])
-        elif int(longest[6]) >= general_dict["top_longest"][1]["duration"]:
+            general_dict["top_longest"][0]["date"] = str("[" + re.search(r"\[([^\[\]]+)\]", line).group(1) + "]")
+            general_dict["top_longest"][0]["method"] = method
+            general_dict["top_longest"][0]["url"] = url
+            general_dict["top_longest"][0]["duration"] = int(longest)
+        elif int(longest) >= general_dict["top_longest"][1]["duration"]:
             general_dict["top_longest"][1]["ip"] = ip
-            general_dict["top_longest"][1]["date"] = longest[0].split("- ")[2]
-            general_dict["top_longest"][1]["method"] = longest[1].split()[0]
-            general_dict["top_longest"][1]["url"] = longest[3]
-            general_dict["top_longest"][1]["duration"] = int(longest[6])
-        elif int(longest[6]) >= general_dict["top_longest"][2]["duration"]:
+            general_dict["top_longest"][1]["date"] = str("[" + re.search(r"\[([^\[\]]+)\]", line).group(1) + "]")
+            general_dict["top_longest"][1]["method"] = method
+            general_dict["top_longest"][1]["url"] = url
+            general_dict["top_longest"][1]["duration"] = int(longest)
+        elif int(longest) >= general_dict["top_longest"][2]["duration"]:
             general_dict["top_longest"][2]["ip"] = ip
-            general_dict["top_longest"][2]["date"] = longest[0].split("- ")[2]
-            general_dict["top_longest"][2]["method"] = longest[1].split()[0]
-            general_dict["top_longest"][2]["url"] = longest[3]
-            general_dict["top_longest"][2]["duration"] = int(longest[6])
-
-        idx += 1
+            general_dict["top_longest"][2]["date"] = str("[" + re.search(r"\[([^\[\]]+)\]", line).group(1) + "]")
+            general_dict["top_longest"][2]["method"] = method
+            general_dict["top_longest"][2]["url"] = url
+            general_dict["top_longest"][2]["duration"] = int(longest)
 
     ip_method = dict(sorted(ip_method.items(), key=lambda x: x[1], reverse=True))
     total_requests = sum(dict_method.values())
